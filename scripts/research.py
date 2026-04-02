@@ -21,8 +21,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
-# Add scripts/ to path for local imports
-sys.path.insert(0, str(Path(__file__).parent))
 
 from scripts import report, session_memory
 from scripts.platform import (
