@@ -344,13 +344,13 @@ class TestStubPlatforms:
         mock_response = [
             {
                 "id": "market-1",
-                "question": "Will it rain tomorrow?",
-                "slug": "rain-tomorrow",
-                "description": "This market resolves yes if it rains.",
+                "question": "Will BTC hit 100k in 2026?",
+                "slug": "btc-100k-2026",
+                "description": "This market resolves yes if Bitcoin reaches 100k USD.",
                 "volume": "10000",
                 "liquidity": "5000",
-                "endDate": "2026-04-10T00:00:00Z",
-                "category": "weather",
+                "endDate": "2026-12-31T00:00:00Z",
+                "category": "crypto",
             }
         ]
         
@@ -366,9 +366,9 @@ class TestStubPlatforms:
         # Reset the client to use our mock
         polymarket_search._client = None
         
-        result = await research._search_polymarket("rain", 30)
+        result = await research._search_polymarket("bitcoin", 30)
         assert len(result) == 1
-        assert result[0]["question"] == "Will it rain tomorrow?"
+        assert result[0]["question"] == "Will BTC hit 100k in 2026?"
         assert result[0]["platform"] == "polymarket"
 
 

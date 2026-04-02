@@ -79,9 +79,9 @@ class TestSearchWithMock:
             ]
         }
 
-        mock_api = MagicMock()
-        mock_api.search.return_value = mock_response
-        monkeypatch.setattr(tavily_search, "TavilySearchAPI", lambda api_key: mock_api)
+        mock_client = MagicMock()
+        mock_client.search.return_value = mock_response
+        monkeypatch.setattr(tavily_search, "TavilyClient", lambda api_key: mock_client)
 
         results = await tavily_search.search("mql5 cracking")
 
@@ -101,9 +101,9 @@ class TestSearchWithMock:
                                       "content": "...", "score": 0.9, "published_date": None}
                                      for i in range(3)]}
 
-        mock_api = MagicMock()
-        mock_api.search.return_value = mock_response
-        monkeypatch.setattr(tavily_search, "TavilySearchAPI", lambda api_key: mock_api)
+        mock_client = MagicMock()
+        mock_client.search.return_value = mock_response
+        monkeypatch.setattr(tavily_search, "TavilyClient", lambda api_key: mock_client)
 
         results = await tavily_search.gather_searches(["query A", "query B"])
 
@@ -120,28 +120,28 @@ class TestSearchWithMock:
         """On timeout, search retries up to 3 times."""
         httpx = pytest.importorskip("httpx")
         monkeypatch.setattr(tavily_search, "_API_KEY", "fake-key")
-        mock_api = MagicMock()
-        mock_api.search.side_effect = [
+        mock_client = MagicMock()
+        mock_client.search.side_effect = [
             httpx.TimeoutException("timeout"),
             httpx.TimeoutException("timeout"),
             {"results": [{"title": "Success", "url": "https://x.com",
                           "content": "...", "score": 0.9, "published_date": None}],
              },
         ]
-        monkeypatch.setattr(tavily_search, "TavilySearchAPI", lambda api_key: mock_api)
+        monkeypatch.setattr(tavily_search, "TavilyClient", lambda api_key: mock_client)
 
         results = await tavily_search.search("test")
         assert len(results) == 1
-        assert mock_api.search.call_count == 3  # 2 failures + 1 success
+        assert mock_client.search.call_count == 3  # 2 failures + 1 success
 
     @pytest.mark.asyncio
     async def test_search_all_retries_fail_returns_empty(self, monkeypatch):
         """If all retries fail, search returns [] without crashing."""
         httpx = pytest.importorskip("httpx")
         monkeypatch.setattr(tavily_search, "_API_KEY", "fake-key")
-        mock_api = MagicMock()
-        mock_api.search.side_effect = httpx.TimeoutException("persistent timeout")
-        monkeypatch.setattr(tavily_search, "TavilySearchAPI", lambda api_key: mock_api)
+        mock_client = MagicMock()
+        mock_client.search.side_effect = httpx.TimeoutException("persistent timeout")
+        monkeypatch.setattr(tavily_search, "TavilyClient", lambda api_key: mock_client)
 
         results = await tavily_search.search("test")
         assert results == []

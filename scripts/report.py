@@ -144,18 +144,84 @@ class Report:
 
         return "\n".join(lines)
 
+    # Intelligence categories — keywords that identify actionable finding types
+    _COMPETITOR_DOMAINS = ["4xpip", "xetracapital", "cheaperforex", "forexcracked", "investeo", "robotfx", "fxdreema", "paradox", "mt2iq", "fxsecret"]
+    _THREAT_KW = ["crack", "decompile", "bypass", "keygen", "stolen", "illegal", "unlock", "license key"]
+    _OPPORTUNITY_KW = ["protect", "license", "security", "unhackable", "encrypt", "authenticate", "activation"]
+    _MARKET_KW = ["bulk license", "wholesale", "discount", "reseller", "pricing", "marketplace", "resale"]
+
+    def _extract_domain(self, url: str) -> str:
+        """Extract a clean domain name from a URL."""
+        if not url:
+            return ""
+        domain = url.lower().replace("https://", "").replace("http://", "").replace("www.", "").split("/")[0]
+        return domain
+
     def _executive_summary(self) -> str:
         total = len(self.findings)
         platforms_found = len({f.platforms[0] for f in self.findings if f.platforms})
         if total == 0:
             return "No results found for this query across the selected platforms."
-        return (
-            f"Found {total} relevant results across {platforms_found} platforms in the last "
-            f"{self.days} days. "
-            f"Sentiment is predominantly **{self._overall_sentiment()}**. "
-            f"Key themes include {self._top_theme()}. "
-            f"{'Some findings appeared in the previous report and are marked as recurring.' if self._has_recurring() else 'All findings appear new compared to the previous report.'}"
-        )
+
+        parts = [f"Found {total} relevant results across {platforms_found} platforms in the last {self.days} days."]
+
+        intel = []
+
+        # Competitor mentions — use domain + title for accuracy
+        competitor_findings = []
+        for f in self.findings:
+            domain = self._extract_domain(f.proof_url)
+            title = f.title.lower()
+            for comp in self._COMPETITOR_DOMAINS:
+                if comp in domain or comp in title:
+                    competitor_findings.append(domain or title[:40])
+                    break
+        if competitor_findings:
+            seen = []
+            for d in competitor_findings[:4]:
+                if d not in seen:
+                    seen.append(d)
+            intel.append(f"**Competitors mentioned:** {', '.join(seen)}")
+
+        # Threat signals (cracking/decompiling services)
+        threats = [
+            f for f in self.findings
+            if f.sentiment == "negative" and any(kw in (f.title + f.body).lower() for kw in self._THREAT_KW)
+        ]
+        if threats:
+            intel.append(f"**Cracking services:** {len(threats)} active — e.g. '{threats[0].title[:55]}'")
+
+        # Opportunity signals (protection products)
+        opportunities = [
+            f for f in self.findings
+            if any(kw in (f.title + f.body).lower() for kw in self._OPPORTUNITY_KW)
+        ]
+        if opportunities:
+            intel.append(f"**Protection products:** {len(opportunities)} services/tools mentioned")
+
+        # Market dynamics (pricing, licensing models)
+        markets = [
+            f for f in self.findings
+            if any(kw in (f.title + f.body).lower() for kw in self._MARKET_KW)
+        ]
+        if markets:
+            intel.append(f"**Market/pricing signals:** {len(markets)} findings on licensing economics")
+
+        if intel:
+            parts.append("")
+            for item in intel:
+                parts.append(f"- {item}")
+
+        sentiment_n = sum(1 for f in self.findings if f.sentiment == "negative")
+        sentiment_p = sum(1 for f in self.findings if f.sentiment == "positive")
+        parts.append(f"")
+        parts.append(f"Sentiment breakdown: {sentiment_n} negative, {sentiment_p} positive, {total - sentiment_n - sentiment_p} neutral.")
+        if self._has_recurring():
+            parts.append("Recurring themes marked with prior report date.")
+        else:
+            parts.append("All findings are new compared to the previous report.")
+
+        return "\n".join(parts)
 
     def _has_recurring(self) -> bool:
         return any(not f.is_new for f in self.findings)
