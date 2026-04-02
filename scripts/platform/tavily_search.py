@@ -10,11 +10,9 @@ import os
 from typing import Any, Dict, List, Optional
 
 try:
-    import httpx
-    from tavily import TavilySearchAPI
+    from tavily import TavilyClient
 except ImportError:
-    httpx = None  # type: ignore[assignment]
-    TavilySearchAPI = None
+    TavilyClient = None
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +79,13 @@ async def search(
         logger.warning("Tavily: TAVILY_API_KEY not set — skipping web search.")
         return []
 
-    if TavilySearchAPI is None:
-        logger.error("Tavily: tavily-py not installed — run: uv add tavily-py")
+    if TavilyClient is None:
+        logger.error("Tavily: tavily package not installed — run: uv add tavily")
         return []
 
     for attempt in range(4):  # 3 retries
         try:
-            api = TavilySearchAPI(api_key=_API_KEY)
+            api = TavilyClient(api_key=_API_KEY)
 
             search_depth = _depth_to_search_depth(depth)
             time_range = _days_to_timerange(days)
