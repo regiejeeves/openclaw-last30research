@@ -33,6 +33,60 @@ def _parse_datetime(value: str | None) -> Optional[datetime]:
     return parsed.astimezone(timezone.utc)
 
 
+# ── Domain filter ─────────────────────────────────────────────────────────────
+# Polymarket returns markets on anything. We only want trading/financial markets.
+# Approach: blocklist of obviously non-trading topics, then require at least
+# one trading/finance keyword.
+
+_NON_TRADING_BLOCKLIST = [
+    # Sports
+    "nba ", "basketball", "football", "nfl ", "mlb ", "nhl ", "hockey",
+    "soccer", "tennis", "golf", "ufc", "mma", "boxing", "olympic",
+    # Entertainment
+    "gta ", "video game", "gaming", "esports", "cinema", "movie", "oscar",
+    "grammy", "netflix", "streaming",
+    # Religion / pseudoscience
+    "jesus", "bible", "god ", " religion",
+    # Politics (prediction markets on policy are fine, elections are noise)
+    "election day", "president ", "senate ", "congress ",
+    # Weather / climate
+    "hurricane", "tornado", "earthquake",
+    # Viral/internet
+    "viral", "trending",
+]
+
+# Trading/finance keywords — must have at least one
+_TRADING_KEYWORDS = [
+    "forex", "fx ", "trading ", "trader", "stock market", "equity",
+    "crypto", "bitcoin", "token", "defi", "nft ",
+    "binary option", "commodity", "gold ", "oil ", "futures",
+    "margin", "leverage", "pip ",
+    "metatrader", "mt4", "mt5", "mql", "expert advisor",
+    "algorithmic", "algotrading", "quant ",
+    "license", "crack", "protection",
+    "prop firm", "trading robot", "trading signal",
+]
+
+
+def _is_trading_related(market: Dict[str, Any]) -> bool:
+    """Return True only if the market is clearly trading/finance-related."""
+    text = " ".join(
+        str(market.get(key) or "")
+        for key in ("question", "title", "description", "category", "slug")
+    ).lower()
+
+    # Block obviously non-trading topics
+    for blocked in _NON_TRADING_BLOCKLIST:
+        if blocked in text:
+            return False
+
+    # Require at least one trading/finance keyword
+    for kw in _TRADING_KEYWORDS:
+        if kw in text:
+            return True
+    return False
+
+
 def _matches_query(query: str, market: Dict[str, Any]) -> int:
     haystack = " ".join(
         str(market.get(key) or "")
@@ -123,6 +177,9 @@ class PolymarketClient:
         scored: List[tuple[int, float, PolymarketResult]] = []
         for market in markets:
             if not isinstance(market, dict):
+                continue
+            # Domain filter: skip non-trading markets (NBA, entertainment, politics, etc.)
+            if not _is_trading_related(market):
                 continue
             match_score = _matches_query(query, market)
             if match_score <= 0:

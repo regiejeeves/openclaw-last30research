@@ -100,8 +100,23 @@ async def search(
                 include_images=False,
             )
 
+            # Quality filter: only keep results that mention specific MQL5/license keywords
+            # in the title (Tavily score is already a relevance signal; this is a quality gate)
+            _QUALITY_KW = [
+                "license", "crack", "protect", "key ", "activation",
+                "ex5", "ex4", "mql5", "mql4",
+            ]
+
+            def _is_quality(item: dict) -> bool:
+                title = item.get("title", "").lower()
+                # Title must have at least one quality keyword
+                return any(kw in title for kw in _QUALITY_KW)
+
+            raw_results = raw.get("results", [])
+            quality = [r for r in raw_results if _is_quality(r)]
+
             results: list[dict[str, Any]] = []
-            for item in raw.get("results", []):
+            for item in (quality or raw_results)[:max_results]:
                 results.append({
                     "title": item.get("title", ""),
                     "url": item.get("url", ""),

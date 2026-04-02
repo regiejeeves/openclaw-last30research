@@ -187,19 +187,19 @@ class Report:
         recurring = [f for f in self.findings if not f.is_new]
 
         if breaking:
-            lines.append("### 🆕 New / Breaking")
+            lines.append("### Breaking / New")
             for f in breaking[:5]:
                 lines.append(self._finding_entry(f))
             lines.append("")
 
         if new:
-            lines.append("### 📈 Emerging Trends")
+            lines.append("### Emerging Trends")
             for f in new[:5]:
                 lines.append(self._finding_entry(f))
             lines.append("")
 
         if recurring:
-            lines.append("### 🔄 Recurring / Sustained")
+            lines.append("### Recurring / Sustained")
             for f in recurring[:5]:
                 lines.append(self._finding_entry(f))
             lines.append("")
@@ -209,10 +209,10 @@ class Report:
 
     def _finding_entry(self, f: Finding) -> str:
         status = "" if f.is_new else f" _(Prior report: {f.first_seen})_"
-        badge = "⚠️ " if f.sentiment == "negative" else "📈 " if f.sentiment == "positive" else "💬 "
+        sentiment_label = f"[{f.sentiment.upper()}] "
         platform_src = f.platforms[0] if f.platforms else "web"
         lines_entry = [
-            f"- **{badge}{f.title}**{status}",
+            f"- **{sentiment_label}{f.title}**{status}",
             f"  {f.body[:200]}",
             f"  _Proof:_ {platform_src} — {f.proof_quote[:150]}",
             f"  [Source]({f.proof_url})",
