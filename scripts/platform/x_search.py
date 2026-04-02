@@ -175,6 +175,7 @@ class BirdClient:
             query,
             "-n",
             str(max_results),
+            "--all",
             "--max-pages",
             str(max_pages),
             "--json",
