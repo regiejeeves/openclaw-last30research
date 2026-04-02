@@ -15,7 +15,9 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -23,7 +25,15 @@ from typing import Dict, List, Optional, Tuple, Any
 sys.path.insert(0, str(Path(__file__).parent))
 
 from scripts import report, session_memory
-from scripts.platform import reddit_search, tavily_search
+from scripts.platform import (
+    hn_search,
+    polymarket_search,
+    reddit_search,
+    tavily_search,
+    telegram_search,
+    x_search,
+    youtube_search,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,36 +43,31 @@ logging.basicConfig(
 logger = logging.getLogger("last30research")
 
 
-# ── Platform stubs (Phase 1 = Reddit + Tavily) ───────────────────────────────
+# ── Platform stubs (Phase 2 = wrappers wired behind same helpers) ────────────
 
 async def _search_x(query: str, days: int) -> List[Dict[str, Any]]:
-    """X / Twitter stub — placeholder until x_search.py is wired."""
-    logger.info("X: stub called (x_search.py not yet implemented)")
-    return []
+    """X / Twitter wrapper."""
+    return await x_search.search(query=query, days=days)
 
 
 async def _search_hn(query: str, days: int) -> List[Dict[str, Any]]:
-    """Hacker News stub."""
-    logger.info("HN: stub called (hn_search.py not yet implemented)")
-    return []
+    """Hacker News wrapper."""
+    return await hn_search.search(query=query, days=days)
 
 
 async def _search_youtube(query: str, days: int) -> List[Dict[str, Any]]:
-    """YouTube stub."""
-    logger.info("YouTube: stub called (youtube_search.py not yet implemented)")
-    return []
+    """YouTube wrapper."""
+    return await youtube_search.search(query=query, days=days)
 
 
 async def _search_telegram(query: str, days: int) -> List[Dict[str, Any]]:
-    """Telegram stub."""
-    logger.info("Telegram: stub called (telegram_search.py not yet implemented)")
-    return []
+    """Telegram wrapper."""
+    return await telegram_search.search(query=query, days=days)
 
 
 async def _search_polymarket(query: str, days: int) -> List[Dict[str, Any]]:
-    """Polymarket stub."""
-    logger.info("Polymarket: stub called (polymarket_search.py not yet implemented)")
-    return []
+    """Polymarket wrapper."""
+    return await polymarket_search.search(query=query, days=days)
 
 
 # ── Platform dispatcher ─────────────────────────────────────────────────────────
@@ -188,7 +193,43 @@ def load_project_config(project_name: str | None) -> dict:
 
 # ── Obsidian save ──────────────────────────────────────────────────────────────
 
-async def save_to_obsidian(content: str, vault_path: str | None, topic: str, folder: str) -> Path | None:
+def _slugify(value: str, max_length: int = 50) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug[:max_length] or "research"
+
+
+def _topic_tag(topic: str) -> str:
+    return _slugify(topic, max_length=40)
+
+
+def _build_obsidian_frontmatter(topic: str, project: str, platforms: List[str]) -> str:
+    date_iso = datetime.now(timezone.utc).date().isoformat()
+    topic_tag = _topic_tag(topic)
+    lines = [
+        "---",
+        f"date: {date_iso}",
+        "tags:",
+        "- research",
+        f"- {topic_tag}",
+        "type: research-report",
+        "source: last30research",
+        "platforms:",
+    ]
+    lines.extend(f"- {platform}" for platform in platforms)
+    lines.append(f"project: {project}")
+    lines.append("---")
+    lines.append("")
+    return "\n".join(lines)
+
+
+async def save_to_obsidian(
+    content: str,
+    vault_path: str | None,
+    topic: str,
+    folder: str,
+    platforms: List[str],
+    project: str,
+) -> Path | None:
     """Save the report markdown to an Obsidian vault."""
     if not vault_path:
         logger.info("Obsidian: no vault_path configured — skipping save")
@@ -200,20 +241,31 @@ async def save_to_obsidian(content: str, vault_path: str | None, topic: str, fol
         logger.warning("Obsidian vault does not exist at %s — skipping save", vault_expanded)
         return None
 
-    from datetime import datetime, timezone
-    slug = topic.lower().replace(" ", "-")[:50]
+    slug = _slugify(topic)
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     filename = f"{slug}-{date_str}.md"
     dest = vault / folder / filename
 
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content)
+        frontmatter = _build_obsidian_frontmatter(topic, project, platforms)
+        dest.write_text(frontmatter + content)
         logger.info("Saved to Obsidian: %s", dest)
         return dest
     except Exception as exc:
         logger.warning("Failed to save to Obsidian: %s", exc)
         return None
+
+
+def deliver_report_to_chat(markdown: str, topic: str, project: str, platforms: List[str]) -> str:
+    """Emit a completion notification and return the chat-deliverable report."""
+    logger.info(
+        "Chat notification: research complete for topic=%r project=%r platforms=%s",
+        topic,
+        project,
+        ",".join(platforms),
+    )
+    return markdown
 
 
 # ── Main research run ──────────────────────────────────────────────────────────
@@ -303,7 +355,14 @@ async def run_research(
     # Save to Obsidian
     saved_path: Path | None = None
     if save:
-        saved_path = await save_to_obsidian(markdown, vault_path, topic, folder)
+        saved_path = await save_to_obsidian(
+            markdown,
+            vault_path,
+            topic,
+            folder,
+            enabled_platforms,
+            project,
+        )
 
     # Save session memory for --deepen follow-up
     findings_data = [
@@ -321,7 +380,7 @@ async def run_research(
         report_path=report_path,
     )
 
-    return markdown
+    return deliver_report_to_chat(markdown, topic, project, enabled_platforms)
 
 
 # ── CLI entry point ────────────────────────────────────────────────────────────

@@ -208,6 +208,8 @@ class TestObsidianSave:
             vault_path=None,
             topic="test",
             folder="research",
+            platforms=["reddit"],
+            project="test",
         )
         assert result is None
 
@@ -219,6 +221,8 @@ class TestObsidianSave:
             vault_path=str(tmp_path / "nonexistent_vault"),
             topic="test",
             folder="research",
+            platforms=["reddit"],
+            project="test",
         )
         assert result is None
 
@@ -232,38 +236,140 @@ class TestObsidianSave:
             vault_path=str(vault),
             topic="test topic",
             folder="research",
+            platforms=["reddit", "x", "web"],
+            project="lockingood",
         )
         assert result is not None
         assert result.parent.name == "research"
         assert result.name.startswith("test-topic")
         assert result.suffix == ".md"
 
+    @pytest.mark.asyncio
+    async def test_saves_with_frontmatter(self, tmp_path):
+        """Saved file contains proper YAML frontmatter."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        await research.save_to_obsidian(
+            content="# Research: Test",
+            vault_path=str(vault),
+            topic="mql5 cracking",
+            folder="research",
+            platforms=["reddit", "hn"],
+            project="lockingood",
+        )
+        # Find the saved file
+        files = list((vault / "research").glob("*.md"))
+        assert len(files) == 1
+        content = files[0].read_text()
+        assert content.startswith("---")
+        assert "date:" in content
+        assert "tags:" in content
+        assert "- research" in content
+        assert "- mql5-cracking" in content
+        assert "type: research-report" in content
+        assert "platforms:" in content
+        assert "- reddit" in content
+        assert "- hn" in content
+        assert "project: lockingood" in content
+
 
 class TestStubPlatforms:
+    """Tests for Phase 2 platform wrappers.
+    
+    These tests verify the wrappers are properly wired and handle
+    missing auth gracefully (return empty results when not configured).
+    """
     @pytest.mark.asyncio
-    async def test_x_stub_returns_empty(self):
+    async def test_x_returns_empty_without_auth(self):
+        """X returns empty when CT0/AUTH_TOKEN not set."""
         result = await research._search_x("test", 30)
+        # Without AUTH_TOKEN and CT0 env vars, should return empty
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_hn_stub_returns_empty(self):
+    async def test_hn_calls_api(self, monkeypatch):
+        """HN wrapper calls the Algolia API and returns structured results."""
+        from scripts.platform import hn_search
+        
+        # Mock the actual HTTP call to return predictable data
+        mock_response = {
+            "hits": [
+                {
+                    "objectID": "123",
+                    "title": "HN Test Post",
+                    "url": "https://news.ycombinator.com/item?id=123",
+                    "author": "testuser",
+                    "created_at_i": 1709424000,
+                    "num_comments": 5,
+                    "points": 42,
+                }
+            ]
+        }
+        
+        async def mock_get(*args, **kwargs):
+            class FakeResponse:
+                status_code = 200
+                def json(self): return mock_response
+                def raise_for_status(self): pass
+            return FakeResponse()
+        
+        monkeypatch.setattr(hn_search.httpx.AsyncClient, "get", mock_get)
+        
+        # Reset the client to use our mock
+        hn_search._client = None
+        
         result = await research._search_hn("test", 30)
-        assert result == []
+        assert len(result) == 1
+        assert result[0]["title"] == "HN Test Post"
+        assert result[0]["platform"] == "hn"
 
     @pytest.mark.asyncio
-    async def test_youtube_stub_returns_empty(self):
+    async def test_youtube_returns_empty_without_gemini_key(self):
+        """YouTube returns empty when GEMINI_API_KEY not set."""
+        # GEMINI_API_KEY is not set in test environment
         result = await research._search_youtube("test", 30)
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_telegram_stub_returns_empty(self):
+    async def test_telegram_returns_empty_without_auth(self):
+        """Telegram returns empty when TELEGRAM_API_ID/HASH not set."""
         result = await research._search_telegram("test", 30)
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_polymarket_stub_returns_empty(self):
-        result = await research._search_polymarket("test", 30)
-        assert result == []
+    async def test_polymarket_calls_api(self, monkeypatch):
+        """Polymarket wrapper calls the markets API and returns structured results."""
+        from scripts.platform import polymarket_search
+        
+        mock_response = [
+            {
+                "id": "market-1",
+                "question": "Will it rain tomorrow?",
+                "slug": "rain-tomorrow",
+                "description": "This market resolves yes if it rains.",
+                "volume": "10000",
+                "liquidity": "5000",
+                "endDate": "2026-04-10T00:00:00Z",
+                "category": "weather",
+            }
+        ]
+        
+        async def mock_get(*args, **kwargs):
+            class FakeResponse:
+                status_code = 200
+                def json(self): return mock_response
+                def raise_for_status(self): pass
+            return FakeResponse()
+        
+        monkeypatch.setattr(polymarket_search.httpx.AsyncClient, "get", mock_get)
+        
+        # Reset the client to use our mock
+        polymarket_search._client = None
+        
+        result = await research._search_polymarket("rain", 30)
+        assert len(result) == 1
+        assert result[0]["question"] == "Will it rain tomorrow?"
+        assert result[0]["platform"] == "polymarket"
 
 
 class TestRunResearchIntegration:
