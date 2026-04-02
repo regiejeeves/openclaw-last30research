@@ -9,11 +9,11 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-import httpx
-
 try:
+    import httpx
     from tavily import TavilySearchAPI
 except ImportError:
+    httpx = None  # type: ignore[assignment]
     TavilySearchAPI = None
 
 logger = logging.getLogger(__name__)
@@ -85,10 +85,8 @@ async def search(
         logger.error("Tavily: tavily-py not installed — run: uv add tavily-py")
         return []
 
-    client: httpx.AsyncClient | None = None
     for attempt in range(4):  # 3 retries
         try:
-            client = httpx.AsyncClient(timeout=httpx.Timeout(_TIMEOUT))
             api = TavilySearchAPI(api_key=_API_KEY)
 
             search_depth = _depth_to_search_depth(depth)
@@ -121,15 +119,6 @@ async def search(
             )
             return results
 
-        except httpx.TimeoutException:
-            logger.warning(
-                "Tavily: timeout on attempt %d for query=%r", attempt + 1, query
-            )
-        except httpx.HTTPStatusError as exc:
-            logger.warning(
-                "Tavily: HTTP %d on attempt %d for query=%r",
-                exc.response.status_code, attempt + 1, query,
-            )
         except Exception as exc:
             logger.warning("Tavily: unexpected error on attempt %d: %s", attempt + 1, exc)
 
@@ -137,7 +126,6 @@ async def search(
             wait = 2.0 ** (attempt + 1)
             logger.info("Tavily: retrying in %.1fs …", wait)
             await asyncio.sleep(wait)
-        client = None
 
     logger.error("Tavily: all retries exhausted for query=%r — returning empty list", query)
     return []

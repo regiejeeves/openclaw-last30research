@@ -339,17 +339,20 @@ def build_report(
         previous_report=previous_report,
     )
 
-    # Deduplicate against previous report
+    # Deduplicate against previous report and intra-run duplicates
     prev_finding_ids: set = set()
     if previous_report:
         for f in previous_report.get("findings", []):
             prev_finding_ids.add(f.get("id", ""))
 
+    seen_ids: set = set()
     for result in all_results:
         finding = Finding.from_result(result)
         if finding.id in prev_finding_ids:
             finding.is_new = False
             finding.first_seen = previous_report.get("date", "unknown")
-        report_obj.add_result(result, finding=finding)
+        if finding.id not in seen_ids:
+            seen_ids.add(finding.id)
+            report_obj.add_result(result, finding=finding)
 
     return report_obj

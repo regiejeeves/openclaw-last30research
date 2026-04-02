@@ -118,8 +118,8 @@ class TestSearchWithMock:
     @pytest.mark.asyncio
     async def test_search_timeout_retries(self, monkeypatch):
         """On timeout, search retries up to 3 times."""
+        httpx = pytest.importorskip("httpx")
         monkeypatch.setattr(tavily_search, "_API_KEY", "fake-key")
-        import httpx
         mock_api = MagicMock()
         mock_api.search.side_effect = [
             httpx.TimeoutException("timeout"),
@@ -137,8 +137,8 @@ class TestSearchWithMock:
     @pytest.mark.asyncio
     async def test_search_all_retries_fail_returns_empty(self, monkeypatch):
         """If all retries fail, search returns [] without crashing."""
+        httpx = pytest.importorskip("httpx")
         monkeypatch.setattr(tavily_search, "_API_KEY", "fake-key")
-        import httpx
         mock_api = MagicMock()
         mock_api.search.side_effect = httpx.TimeoutException("persistent timeout")
         monkeypatch.setattr(tavily_search, "TavilySearchAPI", lambda api_key: mock_api)

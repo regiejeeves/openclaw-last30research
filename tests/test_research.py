@@ -314,6 +314,30 @@ class TestRunResearchIntegration:
         await research.run_research("test topic", platforms=["reddit", "web"], save=False)
         assert search_calls.get("called") is True
 
+    @pytest.mark.asyncio
+    async def test_deep_enables_all_platforms_and_advanced_depth(self, monkeypatch):
+        """--deep causes run_research to use all platforms with advanced depth."""
+        captured: dict = {}
+
+        async def mock_run_platform(query, platforms, keywords, days, depth):
+            captured["platforms"] = platforms
+            captured["depth"] = depth
+            return []
+
+        monkeypatch.setattr(research, "_run_platform_searches", mock_run_platform)
+        monkeypatch.setattr(research, "load_project_config",
+                            lambda name: {"default_platforms": ["reddit", "web"],
+                                             "domain_keywords": [], "priority": "general",
+                                             "vault_path": None})
+        monkeypatch.setattr(research.session_memory, "save_report",
+                            MagicMock(return_value=None))
+
+        all_plats = ["reddit", "x", "web", "hn", "youtube", "telegram", "polymarket"]
+        await research.run_research("test topic", save=False, deep=True)
+
+        assert captured.get("platforms") == all_plats
+        assert captured.get("depth") == "advanced"
+
 
 class TestParseArgs:
     def test_quick_sets_platforms(self, monkeypatch):
@@ -340,3 +364,29 @@ class TestParseArgs:
         monkeypatch.setattr(sys, "argv", ["research.py", "--topic", "test", "--no-save"])
         args = research._parse_args()
         assert args.no_save is True
+
+    def test_deep_flag_parses(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["research.py", "--topic", "test", "--deep"])
+        args = research._parse_args()
+        assert args.deep is True
+
+
+class TestDeepFlagIntegration:
+    @pytest.mark.asyncio
+    async def test_deep_flag_expands_platforms_in_main(self, monkeypatch):
+        """When --deep is passed, run_research is called with deep=True."""
+        captured: dict = {}
+
+        async def mock_runResearch(topic, project, platforms, days, save, folder,
+                                   deepen, depth, deep=False):
+            captured["deep"] = deep
+            captured["platforms"] = platforms
+            captured["depth"] = depth
+            return "# Report"
+
+        monkeypatch.setattr(research, "run_research", mock_runResearch)
+        monkeypatch.setattr(sys, "argv", ["research.py", "--topic", "MQL5", "--deep"])
+
+        await research._main()
+
+        assert captured.get("deep") is True

@@ -58,6 +58,11 @@ class RedditClient:
 
     def _ensure(self) -> Any:
         if self._reddit is None:
+            if not CLIENT_ID or not CLIENT_SECRET:
+                raise RuntimeError(
+                    "Reddit: REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET must be set. "
+                    "See: https://www.reddit.com/prefs/apps"
+                )
             try:
                 import praw
             except ImportError:
@@ -65,8 +70,8 @@ class RedditClient:
                     "praw not installed — run: uv add praw"
                 )
             self._reddit = praw.Reddit(
-                client_id=CLIENT_ID or "your-client-id",
-                client_secret=CLIENT_SECRET or "your-client-secret",
+                client_id=CLIENT_ID,
+                client_secret=CLIENT_SECRET,
                 user_agent=USER_AGENT,
                 read_only=True,
             )

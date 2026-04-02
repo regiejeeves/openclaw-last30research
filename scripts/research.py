@@ -227,6 +227,7 @@ async def run_research(
     folder: str = "research",
     deepen: str | None = None,
     depth: str = "basic",
+    deep: bool = False,
 ) -> str:
     """
     Execute a full research run and return the report as a markdown string.
@@ -256,7 +257,12 @@ async def run_research(
         The complete report in markdown format.
     """
     config = load_project_config(project)
-    enabled_platforms = platforms or config.get("default_platforms", ["reddit", "x", "web"])
+    all_platforms = ["reddit", "x", "web", "hn", "youtube", "telegram", "polymarket"]
+    if deep:
+        enabled_platforms = all_platforms
+        depth = "advanced"
+    else:
+        enabled_platforms = platforms or config.get("default_platforms", ["reddit", "x", "web"])
     keywords = config.get("domain_keywords", [])
     vault_path = config.get("vault_path")
     priority = config.get("priority", "general")
@@ -333,6 +339,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--folder", "-f", default="research", help="Obsidian subfolder")
     parser.add_argument("--deepen", help="Finding ID to drill into from previous report")
     parser.add_argument("--depth", default="basic", help="Tavily depth: ultra-fast/fast/basic/advanced")
+    parser.add_argument("--deep", action="store_true", help="Full mode: all platforms + advanced depth (~5min)")
     parser.add_argument("--quick", action="store_true", help="Fast mode: reddit,x,web only")
     parser.add_argument("--all", action="store_true", help="All platforms")
     return parser.parse_args()
@@ -350,6 +357,8 @@ async def _main() -> None:
     else:
         platforms = None  # use project default
 
+
+
     result = await run_research(
         topic=args.topic,
         project=args.project,
@@ -359,6 +368,7 @@ async def _main() -> None:
         folder=args.folder,
         deepen=args.deepen,
         depth=args.depth,
+        deep=args.deep,
     )
     print(result)
 
