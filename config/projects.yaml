@@ -1,0 +1,38 @@
+# Project registry for last30research
+# Each project has context files, platform preferences, and domain keywords
+
+projects:
+  lockingood:
+    research_context:
+      - ~/.openclaw/workspace/lockingood/research/executive_brief.md
+      - ~/.openclaw/workspace/lockingood/research/product_assumptions.md
+    default_platforms: [reddit, x, web, hn, youtube, telegram, polymarket]
+    domain_keywords:
+      - mql5
+      - metatrader
+      - forex
+      - license protection
+      - ea protection
+      - trading robot
+      - mql5 license cracking
+      - mt5 protection
+    priority: marketing  # marketing angle first, technical second
+    vault_path: ~/obsidian/vaults/lockingood
+
+  personal:
+    research_context:
+      - ~/.openclaw/workspace/personal/research/context.md
+    default_platforms: [reddit, x, web, polymarket]
+    domain_keywords:
+      - personal
+      - research
+    priority: general
+    vault_path: ~/obsidian/vaults/personal
+
+# Global defaults
+default_project: lockingood
+default_days: 30
+default_platforms: [reddit, x, web, hn, youtube, telegram, polymarket]
+auto_save: true
+default_folder: research
+tavily_depth: basic  # ultra-fast/fast/basic/advanced
