@@ -8,7 +8,7 @@ import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,7 @@ class Report:
     polymarket_results: List[Dict[str, Any]] = field(default_factory=list)
     generated_at: str = ""
     previous_report: Optional[Dict[str, Any]] = None
+    priority: str = "general"  # e.g. "marketing", "technical", "general"
 
     def __post_init__(self) -> None:
         if not self.generated_at:
@@ -135,6 +136,9 @@ class Report:
         lines.append("")
         lines.append("## Recommendations")
         lines.append(self._recommendations())
+        lines.append("")
+        lines.append("## Follow-Up Candidates")
+        lines.append(self._follow_up_candidates())
         lines.append("")
         lines.append(self._sources_footer())
 
@@ -277,12 +281,94 @@ class Report:
         parts = [f"- **{k.title()}**: {v} ({v/total*100:.0f}%)" for k, v in counts.items()]
         return "\n".join(parts)
 
+    # ── Priority-aware recommendation helpers ──────────────────────────────────
+
+    _MARKETING_KW = ["community", "brand", "competitor", "user", "adoption",
+                     "feedback", "review", "price", "cost", "license", "crack",
+                     "bypass", "free", "alternative", "switching", "churn",
+                     "testimonial", "discussion", "mention", "sentiment"]
+    _TECHNICAL_KW = ["bug", "crash", "exploit", "api", "performance", "latency",
+                    "reliability", "stability", "error", "fail", "breaking",
+                    "security", "vulnerability", "patch", "update", "release"]
+
+    def _is_marketing_finding(self, f: Finding) -> bool:
+        text = (f.title + " " + f.body).lower()
+        return any(kw in text for kw in self._MARKETING_KW)
+
+    def _is_technical_finding(self, f: Finding) -> bool:
+        text = (f.title + " " + f.body).lower()
+        return any(kw in text for kw in self._TECHNICAL_KW)
+
     def _recommendations(self) -> str:
+        """
+        Rank and return recommendations based on project priority.
+
+        For ``marketing`` priority: marketing-relevant findings first, then technical.
+        For ``technical`` priority: technical findings first, then marketing.
+        For ``general`` priority: all findings sorted by negative sentiment.
+
+        Findings with ``sentiment == negative`` are always included; if none exist,
+        all findings are considered.
+        """
+        if not self.findings:
+            return "- No findings available to base recommendations on."
+
+        priority = self.priority or "general"
         neg_findings = [f for f in self.findings if f.sentiment == "negative"]
-        if neg_findings:
-            recs = [f"- **{f.title[:80]}**: {f.body[:150]}" for f in neg_findings[:3]]
-            return "\n".join(recs)
-        return "- No immediate action items identified based on current findings."
+        source_list = neg_findings if neg_findings else self.findings
+
+        # Score each finding: higher score = higher priority for this project
+        def score(f: Finding) -> tuple[int, int]:
+            p_score = 0
+            if priority == "marketing":
+                p_score = (3 if self._is_marketing_finding(f) else
+                           1 if self._is_technical_finding(f) else 2)
+            elif priority == "technical":
+                p_score = (3 if self._is_technical_finding(f) else
+                           1 if self._is_marketing_finding(f) else 2)
+            else:  # general
+                p_score = 2
+            # Within same priority bucket, negative sentiment wins
+            s_score = 2 if f.sentiment == "negative" else 1
+            return (p_score, s_score)
+
+        ranked = sorted(source_list, key=score, reverse=True)
+        recs = [f"- **{f.title[:80]}**: {f.body[:150]}" for f in ranked[:5]]
+        return "\n".join(recs) if recs else "- No immediate action items identified."
+
+    def _follow_up_candidates(self) -> str:
+        """
+        Generate suggested follow-up queries from the most interesting findings.
+
+        Interesting = breaking, negative, or mixed sentiment. Ranked by interest score.
+        Each candidate shows: finding title + formatted /research sub-query.
+        """
+        def interest_score(f: Finding) -> int:
+            score = 0
+            if f.is_breaking:
+                score += 3
+            if f.sentiment == "negative":
+                score += 2
+            elif f.sentiment == "mixed":
+                score += 2
+            if not f.is_new:  # recurring is interesting for drill-down
+                score += 1
+            return score
+
+        candidates = sorted(self.findings, key=interest_score, reverse=True)[:5]
+        if not candidates:
+            return "_No high-interest findings to follow up on._"
+
+        lines: List[str] = []
+        for f in candidates:
+            # Refine topic from finding title (strip to ~8 words)
+            refined = " ".join(f.title.split()[:8])
+            # Escape for markdown but keep readable
+            lines.append(
+                f"- **`{f.title[:60]}`** — "
+                f"`/research {refined} --deepen={f.id} --project={self.project}`"
+            )
+        return "\n".join(lines)
 
     def _sources_footer(self) -> str:
         counts = [
@@ -307,6 +393,7 @@ def build_report(
     days: int,
     all_results: List[Dict[str, Any]],
     previous_report: Optional[Dict[str, Any]] = None,
+    priority: str = "general",
 ) -> Report:
     """
     Build a structured Report from raw platform results.
@@ -325,6 +412,9 @@ def build_report(
         Flat list of result dicts from all platform wrappers.
     previous_report:
         Dict representation of the previous report (for deduplication).
+    priority:
+        Project priority directive ("marketing", "technical", "general").
+        Used to rank recommendations appropriately.
 
     Returns
     -------
@@ -337,6 +427,7 @@ def build_report(
         platforms=platforms,
         days=days,
         previous_report=previous_report,
+        priority=priority,
     )
 
     # Deduplicate against previous report and intra-run duplicates
@@ -356,3 +447,83 @@ def build_report(
             report_obj.add_result(result, finding=finding)
 
     return report_obj
+
+
+# ── Chat delivery ───────────────────────────────────────────────────────────────
+
+@dataclass
+class ChatDelivery:
+    """
+    Structured result from :func:`deliver_report_to_chat`.
+    Suitable for rendering in chat without parsing markdown.
+    """
+    summary: str          # One-line summary of the research run
+    key_findings: List[str]  # Up to 5 key finding titles
+    obsidian_link: str    # Path to saved Obsidian file (empty if not saved)
+    obsidian_note: str    # Human-readable note about where the file was saved
+    markdown: str         # Full report markdown (unchanged)
+
+
+def build_chat_summary(report_obj: "Report", obsidian_path: str | None = None) -> ChatDelivery:
+    """
+    Build a structured :class:`ChatDelivery` from a populated ``Report``.
+
+    Parameters
+    ----------
+    report_obj:
+        A :class:`Report` that has had :meth:`Report.build()` called
+        (so findings are finalised with IDs).
+    obsidian_path:
+        Path string of the saved Obsidian file, if any.
+
+    Returns
+    -------
+    ChatDelivery
+    """
+    findings = report_obj.findings
+
+    # One-line summary
+    total = len(findings)
+    if total == 0:
+        summary = f"🔍 Research on \"{report_obj.topic}\" — no results found."
+    else:
+        sentiment = report_obj._overall_sentiment()
+        summary = (
+            f"🔍 Research on \"{report_obj.topic}\" — "
+            f"{total} finding{'s' if total != 1 else ''}, "
+            f"mostly **{sentiment}**. "
+            f"Ran on {', '.join(report_obj.platforms)}."
+        )
+
+    # Top 5 key findings (highest interest score)
+    def interest_score(f: Finding) -> int:
+        s = 0
+        if f.is_breaking:
+            s += 3
+        if f.sentiment == "negative":
+            s += 2
+        elif f.sentiment == "mixed":
+            s += 2
+        return s
+
+    top = sorted(findings, key=interest_score, reverse=True)[:5]
+    key_findings = [
+        f"[{sentiment.upper()}] {f.title[:70]}"  # e.g. "[NEGATIVE] MQL5 license crack...
+        for f, sentiment in [(f, f.sentiment[:3].upper()) for f in top]
+    ]
+
+    # Obsidian link
+    if obsidian_path:
+        obsidian_note = f"📝 Full report saved to Obsidian"
+        obsidian_link = obsidian_path
+    else:
+        obsidian_note = "(not saved — use `--save` to persist the report)"
+        obsidian_link = ""
+
+    return ChatDelivery(
+        summary=summary,
+        key_findings=key_findings,
+        obsidian_link=obsidian_link,
+        obsidian_note=obsidian_note,
+        markdown=report_obj.build(),
+    )

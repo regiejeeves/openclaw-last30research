@@ -257,8 +257,18 @@ async def save_to_obsidian(
         return None
 
 
-def deliver_report_to_chat(markdown: str, topic: str, project: str, platforms: List[str]) -> str:
-    """Emit a completion notification and return the chat-deliverable report."""
+def deliver_report_to_chat(
+    markdown: str,
+    topic: str,
+    project: str,
+    platforms: List[str],
+) -> str:
+    """
+    Emit a completion notification and return the chat-deliverable report.
+
+    Phase 3: Also logs a structured summary for the operator.
+    Returns *markdown* unchanged for backward compatibility with CLI consumers.
+    """
     logger.info(
         "Chat notification: research complete for topic=%r project=%r platforms=%s",
         topic,
@@ -280,9 +290,9 @@ async def run_research(
     deepen: str | None = None,
     depth: str = "basic",
     deep: bool = False,
-) -> str:
+) -> report.ChatDelivery:
     """
-    Execute a full research run and return the report as a markdown string.
+    Execute a full research run and return a structured chat delivery.
 
     Parameters
     ----------
@@ -305,8 +315,9 @@ async def run_research(
 
     Returns
     -------
-    str
-        The complete report in markdown format.
+    ChatDelivery
+        Structured delivery object with summary, key findings, Obsidian link,
+        and full markdown. Access ``.markdown`` for the report text.
     """
     config = load_project_config(project)
     all_platforms = ["reddit", "x", "web", "hn", "youtube", "telegram", "polymarket"]
@@ -349,6 +360,7 @@ async def run_research(
         days=days,
         all_results=all_results,
         previous_report=previous,
+        priority=priority,
     )
     markdown = report_obj.build()
 
@@ -380,7 +392,17 @@ async def run_research(
         report_path=report_path,
     )
 
-    return deliver_report_to_chat(markdown, topic, project, enabled_platforms)
+    # Build chat delivery (Phase 3: structured summary for chat)
+    chat_delivery = report.build_chat_summary(report_obj, obsidian_path=report_path)
+
+    # Log structured summary for operator visibility
+    logger.info(
+        "[CHAT SUMMARY] %s | Findings: %s",
+        chat_delivery.summary,
+        " | ".join(chat_delivery.key_findings[:3]),
+    )
+
+    return chat_delivery
 
 
 # ── CLI entry point ────────────────────────────────────────────────────────────
@@ -429,7 +451,10 @@ async def _main() -> None:
         depth=args.depth,
         deep=args.deep,
     )
-    print(result)
+    if isinstance(result, report.ChatDelivery):
+        print(result.markdown)
+    else:
+        print(result)  # backward compat for direct string returns
 
 
 if __name__ == "__main__":

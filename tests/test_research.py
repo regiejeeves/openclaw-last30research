@@ -374,8 +374,8 @@ class TestStubPlatforms:
 
 class TestRunResearchIntegration:
     @pytest.mark.asyncio
-    async def test_run_research_returns_markdown(self, monkeypatch):
-        """run_research returns a non-empty markdown string."""
+    async def test_run_research_returns_chat_delivery(self, monkeypatch):
+        """run_research returns a ChatDelivery with full markdown inside."""
         monkeypatch.setattr(research, "load_project_config",
                             lambda name: {
                                 "default_platforms": ["web"],
@@ -396,9 +396,12 @@ class TestRunResearchIntegration:
             save=False,
         )
 
-        assert isinstance(result, str)
-        assert "# Research: MQL5 cracking" in result
-        assert "## Executive Summary" in result
+        assert isinstance(result, research.report.ChatDelivery)
+        assert "# Research: MQL5 cracking" in result.markdown
+        assert "## Executive Summary" in result.markdown
+        assert result.summary != ""
+        assert isinstance(result.key_findings, list)
+        assert result.obsidian_link == ""  # not saved in this test
 
     @pytest.mark.asyncio
     async def test_run_research_calls_all_platforms(self, monkeypatch):
